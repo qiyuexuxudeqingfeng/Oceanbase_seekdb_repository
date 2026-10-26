@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import sys
 import time
 import uuid
@@ -51,9 +52,14 @@ async def main():
         while True:
             state = telemetry_state(candidates)
             if state is not None and state[1] is not False:
-                print(f"DEPLOYMENT_UUID={state[0]}", flush=True)
-                if state[1] is True:
+                identifier, delivered = state
+                print(f"DEPLOYMENT_UUID={identifier}", flush=True)
+                if delivered is True:
                     print("Telemetry delivery confirmed by the engine.", flush=True)
+                output_path = os.environ.get("GITHUB_OUTPUT")
+                if output_path:
+                    with Path(output_path).open("a", encoding="utf-8") as output:
+                        output.write(f"deployment_uuid={identifier}\n")
                 return
             if time.monotonic() >= deadline:
                 raise RuntimeError(

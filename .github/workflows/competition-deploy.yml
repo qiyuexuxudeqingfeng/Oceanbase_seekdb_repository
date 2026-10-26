@@ -19,6 +19,8 @@ jobs:
   deploy:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
+    outputs:
+      deployment_uuid: ${{ steps.smoke.outputs.deployment_uuid }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -35,8 +37,34 @@ jobs:
           "pylibseekdb @ https://files.pythonhosted.org/packages/19/e9/49507c0859bf0898f99f2b0978baba6cfaca9563e4ba20242be014ee7e6c/pylibseekdb-1.3.0.post4-cp312-abi3-manylinux_2_28_x86_64.whl"
 
       - name: Start seekdb and verify SQL and telemetry
+        id: smoke
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONUNBUFFERED: "1"
           TELEMETRY_ENABLED: "true"
         run: python tools/deploy/competition_smoke.py "$RUNNER_TEMP/competition-seekdb/data"
+
+  record:
+    needs: deploy
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: true
+
+      - name: Record the verified deployment UUID in a private tag
+        env:
+          DEPLOYMENT_UUID: ${{ needs.deploy.outputs.deployment_uuid }}
+        run: |
+          if [[ ! "$DEPLOYMENT_UUID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            echo "Invalid deployment UUID" >&2
+            exit 1
+          fi
+          tag="competition-deployment-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "$tag" --message "seekdb deployment UUID: ${DEPLOYMENT_UUID}" --message "SQL smoke check: SELECT 1 passed"
+          git push origin "refs/tags/$tag"
