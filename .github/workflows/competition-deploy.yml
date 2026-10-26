@@ -2,6 +2,11 @@ name: Competition seekdb deployment
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/competition-deploy.yml"
+      - "tools/deploy/competition_smoke.py"
 
 permissions:
   contents: read
