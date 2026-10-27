@@ -39,14 +39,17 @@ def dump_diagnostics(candidates, database_path):
     print("Telemetry delivery was not confirmed by the engine.", flush=True)
     for candidate in sorted(candidates):
         print(f"telemetry candidate {candidate}: exists={candidate.is_file()}", flush=True)
-    for name in ("observer.log.wf", "observer.log"):
-        path = database_path / "log" / name
+    log_dir = database_path / "log"
+    logs = sorted(p for p in log_dir.glob("*.log*") if p.is_file())[:4] if log_dir.is_dir() else []
+    if not logs:
+        entries = sorted(p.name for p in log_dir.iterdir())[:20] if log_dir.is_dir() else []
+        print(f"{log_dir}: exists={log_dir.is_dir()}, entries={entries}", flush=True)
+    for path in logs:
         tail = log_tail(path)
-        if tail is None:
-            continue
-        print(f"--- {path} (last {len(tail)} lines) ---", flush=True)
-        for line in tail:
-            print(line, flush=True)
+        if tail is not None:
+            print(f"--- {path} (last {len(tail)} lines) ---", flush=True)
+            for line in tail:
+                print(line, flush=True)
 
 
 async def main():
