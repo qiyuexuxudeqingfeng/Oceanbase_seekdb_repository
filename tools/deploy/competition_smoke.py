@@ -36,13 +36,58 @@ def telemetry_matches(path, limit=80):
     return matches[-limit:]
 
 
-def engine_telemetry_env(pid_file, proc_root=Path("/proc")):
+SENSITIVE_ARG_KEYS = ("password", "passwd", "token", "secret", "api_key", "access_key")
+CONNECTION_FIELDS = ("user", "host", "port", "unix_socket", "database")
+
+
+def engine_pid(pid_file):
     try:
         pid = pid_file.read_text(encoding="utf-8", errors="replace").strip()
     except OSError as error:
-        return [], f"{pid_file}: {error}"
+        return None, f"{pid_file}: {error}"
     if not pid.isdigit():
-        return [], f"{pid_file}: invalid pid {pid!r}"
+        return None, f"{pid_file}: invalid pid {pid!r}"
+    return pid, None
+
+
+def mask_argument(argument):
+    lowered = argument.lower()
+    if not any(key in lowered for key in SENSITIVE_ARG_KEYS):
+        return argument, False
+    name, separator, _ = argument.partition("=")
+    if separator:
+        return f"{name}=<redacted>", False
+    return f"{name} <redacted>", True
+
+
+def engine_cmdline(pid_file, proc_root=Path("/proc"), limit=32):
+    pid, error = engine_pid(pid_file)
+    if pid is None:
+        return [], error
+    cmdline_path = proc_root / pid / "cmdline"
+    try:
+        raw = cmdline_path.read_bytes()
+    except OSError as error:
+        return [], f"{cmdline_path}: {error}"
+    arguments = raw.decode("utf-8", "replace").split("\0")
+    if arguments and arguments[-1] == "":
+        arguments.pop()
+    shown = []
+    hide_next = False
+    for argument in arguments[:limit]:
+        if hide_next:
+            shown.append("<redacted>")
+            hide_next = False
+            continue
+        masked, hide_next = mask_argument(argument)
+        shown.append(masked)
+    return shown, f"pid {pid}: {len(arguments)} args (showing {len(shown)})"
+
+
+def engine_telemetry_env(pid_file, proc_root=Path("/proc")):
+    pid, error = engine_pid(pid_file)
+    if pid is None:
+        return [], error
     environ_path = proc_root / pid / "environ"
     try:
         raw = environ_path.read_bytes()
@@ -71,15 +116,28 @@ def telemetry_summary(path):
         return f"telemetry content unavailable: {error}"
 
 
-def dump_diagnostics(candidates, database_path, proc_root=Path("/proc")):
+def connection_summary(options):
+    if not isinstance(options, dict):
+        return "connection options unavailable"
+    visible = ", ".join(f"{name}={options.get(name)!r}" for name in CONNECTION_FIELDS)
+    return f"{visible}, password_present={bool(options.get('password'))}"
+
+
+def dump_diagnostics(candidates, database_path, proc_root=Path("/proc"), connection=None):
     print("Telemetry delivery was not confirmed by the engine.", flush=True)
     for candidate in sorted(candidates):
         print(f"telemetry candidate {candidate}: exists={candidate.is_file()}", flush=True)
-    entries, env_status = engine_telemetry_env(
-        database_path / "run" / "seekdb.pid", proc_root)
+    pid_file = database_path / "run" / "seekdb.pid"
+    entries, env_status = engine_telemetry_env(pid_file, proc_root)
     print(f"engine telemetry env: {env_status}", flush=True)
     for entry in entries:
         print(f"engine env {entry}", flush=True)
+    arguments, cmdline_status = engine_cmdline(pid_file, proc_root)
+    print(f"engine cmdline: {cmdline_status}", flush=True)
+    for argument in arguments:
+        print(f"engine arg {argument}", flush=True)
+    if connection is not None:
+        print(f"connection options: {connection_summary(connection)}", flush=True)
     state_path = next((p for p in sorted(candidates) if p.is_file()), None)
     print(telemetry_summary(state_path), flush=True)
     log_dir = database_path / "log"
@@ -133,7 +191,7 @@ async def main():
                         output.write(f"deployment_uuid={identifier}\n")
                 return
             if time.monotonic() >= deadline:
-                dump_diagnostics(candidates, database_path)
+                dump_diagnostics(candidates, database_path, connection=options)
                 raise RuntimeError(
                     "The engine did not confirm telemetry delivery within 120 seconds"
                 )
