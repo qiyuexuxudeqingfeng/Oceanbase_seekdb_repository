@@ -36,15 +36,57 @@ def telemetry_matches(path, limit=80):
     return matches[-limit:]
 
 
-def dump_diagnostics(candidates, database_path):
+def engine_telemetry_env(pid_file, proc_root=Path("/proc")):
+    try:
+        pid = pid_file.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError as error:
+        return [], f"{pid_file}: {error}"
+    if not pid.isdigit():
+        return [], f"{pid_file}: invalid pid {pid!r}"
+    environ_path = proc_root / pid / "environ"
+    try:
+        raw = environ_path.read_bytes()
+    except OSError as error:
+        return [], f"{environ_path}: {error}"
+    entries = []
+    status = f"pid {pid}: TELEMETRY_ENABLED absent"
+    for entry in raw.decode("utf-8", "replace").split("\0"):
+        name, separator, value = entry.partition("=")
+        if separator and any(key in name for key in ("TELEMETRY", "REPORTER", "SEEKDB")):
+            entries.append(entry)
+            if name == "TELEMETRY_ENABLED":
+                status = f"pid {pid}: TELEMETRY_ENABLED={value!r}"
+    return entries, status
+
+
+def telemetry_summary(path):
+    if path is None:
+        return "telemetry content unavailable: no telemetry.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        content = payload["content"]
+        return (f"telemetry content: reporter={content.get('reporter')!r}, "
+                f"telemetryVersion={content.get('telemetryVersion')!r}")
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as error:
+        return f"telemetry content unavailable: {error}"
+
+
+def dump_diagnostics(candidates, database_path, proc_root=Path("/proc")):
     print("Telemetry delivery was not confirmed by the engine.", flush=True)
     for candidate in sorted(candidates):
         print(f"telemetry candidate {candidate}: exists={candidate.is_file()}", flush=True)
+    entries, env_status = engine_telemetry_env(
+        database_path / "run" / "seekdb.pid", proc_root)
+    print(f"engine telemetry env: {env_status}", flush=True)
+    for entry in entries:
+        print(f"engine env {entry}", flush=True)
+    state_path = next((p for p in sorted(candidates) if p.is_file()), None)
+    print(telemetry_summary(state_path), flush=True)
     log_dir = database_path / "log"
     logs = sorted(p for p in log_dir.glob("*.log*") if p.is_file())[:4] if log_dir.is_dir() else []
     if not logs:
-        entries = sorted(p.name for p in log_dir.iterdir())[:20] if log_dir.is_dir() else []
-        print(f"{log_dir}: exists={log_dir.is_dir()}, entries={entries}", flush=True)
+        names = sorted(p.name for p in log_dir.iterdir())[:20] if log_dir.is_dir() else []
+        print(f"{log_dir}: exists={log_dir.is_dir()}, entries={names}", flush=True)
     for path in logs:
         matches = telemetry_matches(path)
         if matches is not None:
