@@ -97,6 +97,28 @@ jobs:
               printf '\nRunning job log unavailable\n' >> "$RUNNER_TEMP/ai-monitor.txt"
             fi
           fi
+          for failed_job_id in $(python3 -c 'import json, os; from pathlib import Path; root = Path(os.environ["RUNNER_TEMP"]); print(" ".join(str(job["id"]) for path in root.glob("ai-jobs-*.json") for job in json.loads(path.read_text())["jobs"] if job["conclusion"] == "failure"))'); do
+            if curl --fail --silent --show-error --location --max-time 60 \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${failed_job_id}/logs" \
+              --output "$RUNNER_TEMP/ai-failed-${failed_job_id}.log"; then
+              FAILED_JOB_ID="$failed_job_id" python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          job_id = os.environ["FAILED_JOB_ID"]
+          text = (root / f"ai-failed-{job_id}.log").read_text(encoding="utf-8", errors="replace")
+          text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
+          with (root / "ai-monitor.txt").open("a", encoding="utf-8") as summary:
+              summary.write(f"\nFailed job {job_id} log tail\n" + "\n".join(text.splitlines()[-120:])[-20000:])
+          PY
+            else
+              printf '\nFailed job %s log unavailable\n' "$failed_job_id" >> "$RUNNER_TEMP/ai-monitor.txt"
+            fi
+          done
 
       - name: Record status in a private tag
         run: |
