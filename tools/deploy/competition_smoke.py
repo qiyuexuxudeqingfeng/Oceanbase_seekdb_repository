@@ -24,8 +24,29 @@ def telemetry_state(candidates):
             continue
         if str(parsed) != identifier:
             continue
-        return identifier, payload.get("sent")
+        return candidate, identifier, payload.get("sent")
     return None
+
+
+def log_tail(path, lines=80):
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return text.splitlines()[-lines:]
+
+
+def dump_diagnostics(candidates, database_path):
+    print("Telemetry delivery was not confirmed by the engine.", flush=True)
+    for candidate in sorted(candidates):
+        print(f"telemetry candidate {candidate}: exists={candidate.is_file()}", flush=True)
+    for name in ("observer.log.wf", "observer.log"):
+        path = database_path / "log" / name
+        tail = log_tail(path)
+        if tail is None:
+            continue
+        print(f"--- {path} (last {len(tail)} lines) ---", flush=True)
+        for line in tail:
+            print(line, flush=True)
 
 
 async def main():
@@ -49,10 +70,15 @@ async def main():
             Path.cwd() / "run" / "telemetry.json",
         }
         deadline = time.monotonic() + 120
+        last_state = None
         while True:
             state = telemetry_state(candidates)
-            if state is not None and state[1] is True:
-                identifier = state[0]
+            if state is not None and state != last_state:
+                path, identifier, sent = state
+                print(f"telemetry {path}: sent={sent!r}, uuid={identifier}", flush=True)
+                last_state = state
+            if state is not None and state[2] is True:
+                identifier = state[1]
                 print(f"DEPLOYMENT_UUID={identifier}", flush=True)
                 print("Telemetry delivery confirmed by the engine.", flush=True)
                 output_path = os.environ.get("GITHUB_OUTPUT")
@@ -61,6 +87,7 @@ async def main():
                         output.write(f"deployment_uuid={identifier}\n")
                 return
             if time.monotonic() >= deadline:
+                dump_diagnostics(candidates, database_path)
                 raise RuntimeError(
                     "The engine did not confirm telemetry delivery within 120 seconds"
                 )
