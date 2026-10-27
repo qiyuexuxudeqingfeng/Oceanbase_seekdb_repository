@@ -1,0 +1,136 @@
+name: Competition AI functions
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [competition/ai-functions]
+    paths:
+      - ".github/workflows/competition-ai-functions.yml"
+      - "src/sql/engine/expr/ob_expr_ai/**"
+      - "tools/deploy/mysql_test/test_suite/ai_function/**"
+      - "unittest/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: competition-ai-functions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mysqltest:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    outputs:
+      diagnostics: ${{ steps.diagnostics.outputs.diagnostics }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+
+      - name: Cache native dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps/3rd
+          key: seekdb-deps-${{ runner.os }}-${{ hashFiles('deps/init/**') }}
+          restore-keys: seekdb-deps-${{ runner.os }}-
+
+      - name: Configure compiler cache when available
+        run: |
+          if command -v ccache >/dev/null 2>&1; then
+            {
+              echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
+              echo "CCACHE_MAXSIZE=4G"
+              echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+              echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Cache compiler results
+        if: env.CCACHE_DIR != ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: seekdb-ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: seekdb-ccache-${{ runner.os }}-
+
+      - name: Build seekdb from this revision
+        run: |
+          exec > >(tee "$RUNNER_TEMP/build.log") 2>&1
+          ./build.sh release --init
+          cmake --build build_release --target seekdb --parallel 4
+          test -x build_release/src/observer/seekdb
+
+      - name: Deploy the temporary test instance
+        run: |
+          exec > >(tee "$RUNNER_TEMP/deploy.log") 2>&1
+          ./tools/deploy/obd.sh prepare -p "$RUNNER_TEMP/obtest"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          source = Path("tools/deploy/single.yaml")
+          destination = Path(os.environ["RUNNER_TEMP"]) / "seekdb-single.yaml"
+          home_path = Path(os.environ["RUNNER_TEMP"]) / "seekdb-home"
+          lines = [
+              f"  home_path: {home_path}\n" if line.lstrip().startswith("home_path:") else line
+              for line in source.read_text(encoding="utf-8").splitlines(keepends=True)
+          ]
+          destination.write_text("".join(lines), encoding="utf-8")
+          PY
+          ./tools/deploy/obd.sh deploy -c "$RUNNER_TEMP/seekdb-single.yaml" -n single
+
+      - name: Run the published AI prompt SQL tests
+        run: |
+          exec > >(tee "$RUNNER_TEMP/ai-prompt.log") 2>&1
+          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt
+
+      - name: Capture diagnostic output
+        id: diagnostics
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          parts = []
+          for name in ("build", "deploy", "ai-prompt"):
+              path = root / f"{name}.log"
+              if path.is_file():
+                  text = path.read_text(encoding="utf-8", errors="replace")
+                  text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
+                  parts.append(f"--- {name} ---\n" + "\n".join(text.splitlines()[-60:]))
+          diagnostics = "\n".join(parts)[-16000:] or "No diagnostic log captured."
+          delimiter = "__AI_DIAGNOSTICS__"
+          while delimiter in diagnostics:
+              delimiter += "_"
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"diagnostics<<{delimiter}\n{diagnostics}\n{delimiter}\n")
+          PY
+
+  record:
+    if: always() && needs.mysqltest.result != 'cancelled'
+    needs: mysqltest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: true
+
+      - name: Record the result and diagnostics in a private tag
+        env:
+          RESULT: ${{ needs.mysqltest.result }}
+          DIAGNOSTICS: ${{ needs.mysqltest.outputs.diagnostics }}
+        run: |
+          tag="competition-ai-prompt-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "$tag" --message "AI_PROMPT result: ${RESULT}" --message "${DIAGNOSTICS}"
+          git push origin "refs/tags/$tag"
