@@ -242,6 +242,33 @@ def print_launch_log(path, limit=40):
         print(line, flush=True)
 
 
+def acquire_client_lock(database_path):
+    clients_path = database_path / "run" / "seekdb.clients"
+    clients_path.parent.mkdir(parents=True, exist_ok=True)
+    clients_file = clients_path.open("a+")
+    try:
+        import fcntl
+
+        fcntl.flock(clients_file.fileno(), fcntl.LOCK_SH)
+    except Exception:
+        clients_file.close()
+        raise
+    return clients_file
+
+
+def release_client_lock(clients_file):
+    if clients_file is None:
+        return
+    try:
+        import fcntl
+
+        fcntl.flock(clients_file.fileno(), fcntl.LOCK_UN)
+    except (ImportError, OSError):
+        pass
+    finally:
+        clients_file.close()
+
+
 async def main():
     database_path = Path(sys.argv[1]).resolve()
     database_path.mkdir(parents=True, exist_ok=True)
@@ -254,15 +281,21 @@ async def main():
     environment = os.environ.copy()
     environment["TELEMETRY_ENABLED"] = "true"
     process = None
+    clients_lock = None
     try:
         arguments = launch_arguments(binary, database_path)
         print(f"engine launch: {' '.join(arguments[1:])}", flush=True)
+        # Embedded seekdb exits once flock(run/seekdb.clients, LOCK_EX) succeeds
+        # (ObServer::wait_no_client), so the parent keeps LOCK_SH on that file.
+        clients_lock = acquire_client_lock(database_path)
+        print(f"engine client lock: {database_path / 'run' / 'seekdb.clients'}", flush=True)
         process = await asyncio.create_subprocess_exec(
             *arguments,
             cwd=str(database_path),
             env=environment,
             stdout=launch_log,
             stderr=asyncio.subprocess.STDOUT,
+            close_fds=True,
         )
         ready_error = await asyncio.to_thread(
             wait_until_ready, database_path, process,
@@ -313,6 +346,7 @@ async def main():
             time.sleep(2)
     finally:
         await stop_engine(process)
+        release_client_lock(clients_lock)
         launch_log.close()
 
 
