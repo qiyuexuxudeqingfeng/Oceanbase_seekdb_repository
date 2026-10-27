@@ -1758,7 +1758,9 @@ int ObAIFuncPromptObjectUtils::replace_all_str_args_in_template(ObIAllocator &al
       } else if (arg_node->json_type() == ObJsonNodeType::J_STRING) {
         arg_value = static_cast<ObJsonString *>(arg_node)->get_str();
       } else if (arg_node->json_type() == ObJsonNodeType::J_OBJECT || arg_node->json_type() == ObJsonNodeType::J_ARRAY) {
-        if (OB_FAIL(arg_node->get_raw_binary(arg_value, &allocator))) {
+        ObJsonBuffer json_buffer(&allocator);
+        if (OB_FAIL(arg_node->print(json_buffer, true))) {
+        } else if (OB_FAIL(json_buffer.get_result_string(arg_value))) {
         }
       } else {
         ret = OB_INVALID_ARGUMENT;
