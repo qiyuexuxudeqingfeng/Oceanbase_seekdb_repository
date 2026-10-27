@@ -29,6 +29,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Free disk space for the native build
+        uses: insightsengineering/disk-space-reclaimer@v1
+        with:
+          tools-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: true
+
       - uses: ./.github/actions/setup-rust
 
       - name: Cache native dependencies
@@ -160,5 +171,6 @@ jobs:
           tag="competition-ai-functions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "AI functions result: ${RESULT}" -m "Tested commit: ${GITHUB_SHA}"
           git tag --annotate "$tag" --message "AI functions result: ${RESULT}" --message "${DIAGNOSTICS}"
           git push origin "refs/tags/$tag"

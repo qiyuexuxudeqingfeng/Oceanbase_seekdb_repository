@@ -125,5 +125,6 @@ jobs:
           tag="competition-ai-monitor-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "AI workflow states"
           git tag --annotate "$tag" --file "$RUNNER_TEMP/ai-monitor.txt"
           git push origin "refs/tags/$tag"
