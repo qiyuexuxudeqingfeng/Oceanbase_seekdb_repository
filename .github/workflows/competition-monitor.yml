@@ -50,10 +50,15 @@ jobs:
               summaries.append({
                   "id": run["id"],
                   "head_sha": run["head_sha"],
+                  "created_at": run["created_at"],
+                  "updated_at": run["updated_at"],
+                  "run_started_at": run.get("run_started_at"),
                   "status": run["status"],
                   "conclusion": run["conclusion"],
                   "jobs": [{
+                      "id": job["id"],
                       "name": job["name"],
+                      "started_at": job.get("started_at"),
                       "status": job["status"],
                       "conclusion": job["conclusion"],
                       "steps": [{
