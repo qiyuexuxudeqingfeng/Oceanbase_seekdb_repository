@@ -118,6 +118,14 @@ jobs:
           )
           if replaced != 1:
               raise SystemExit(f"expected exactly one home_path entry, found {replaced}")
+
+          if re.search(r"(?m)^[ \t]*(memory_budget|datafile_size|log_disk_size):", text):
+              raise SystemExit("refusing to override resource settings")
+          global_marker = "  global:"
+          if text.count(global_marker) != 1:
+              raise SystemExit("expected exactly one global section")
+          resource_lines = "    memory_budget: '1G'\n    datafile_size: '2G'\n    log_disk_size: '2G'"
+          text = text.replace(global_marker, f"{global_marker}\n{resource_lines}", 1)
           destination.write_text(text, encoding="utf-8")
           PY
           ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
