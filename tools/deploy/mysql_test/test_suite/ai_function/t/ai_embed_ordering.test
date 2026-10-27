@@ -1,0 +1,25 @@
+#owner: oceanbase
+#owner group: shenzhen
+
+connection default;
+
+--error 0,11118
+call DBMS_AI_SERVICE.DROP_AI_MODEL('ordering_embed');
+--error 0,11112
+call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('ordering_embed_ep');
+call DBMS_AI_SERVICE.CREATE_AI_MODEL(
+  'ordering_embed', '{"type":"dense_embedding","model_name":"text-embedding-v1"}');
+call DBMS_AI_SERVICE.CREATE_AI_MODEL_ENDPOINT(
+  'ordering_embed_ep', '{"ai_model_name":"ordering_embed","scope":"all","url":"http://0.0.0.0:8000/compatible-mode/v1/embeddings","access_key":"mock-key","provider":"openai"}');
+
+--disable_warnings
+drop table if exists ai_embed_order;
+--enable_warnings
+create table ai_embed_order(id int primary key, content text);
+insert into ai_embed_order values(1,'first'),(2,'second');
+select id, json_extract(ai_embed('ordering_embed', content), '$[0]') = id as in_original_order
+  from ai_embed_order order by id;
+drop table ai_embed_order;
+
+call DBMS_AI_SERVICE.DROP_AI_MODEL('ordering_embed');
+call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('ordering_embed_ep');

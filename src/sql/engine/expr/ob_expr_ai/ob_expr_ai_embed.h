@@ -37,6 +37,11 @@ public:
                                 int64_t param_num,
                                 common::ObExprTypeCtx &type_ctx) const override;
   static int eval_ai_embed(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &res);
+  static int eval_ai_embed_batch(const ObExpr &expr, ObEvalCtx &ctx, const ObBitVector &skip, int64_t batch_size);
+  static int eval_embed_group(const ObExpr &expr, ObEvalCtx &ctx, query::ObIAiEndpointResolver *endpoint_resolver,
+                              MultimodeAlloctor &allocator, const ObString &model_id, int64_t dimension,
+                              ObArray<ObString> &contents, ObArray<int64_t> &row_indexes, ObDatum *results);
+  static constexpr int64_t EMBED_BATCH_SIZE = 32;
   virtual int cg_expr(ObExprCGCtx &expr_cg_ctx, 
                       const ObRawExpr &raw_expr,
                       ObExpr &rt_expr) const override;

@@ -103,7 +103,17 @@ jobs:
                       raise
                   time.sleep(0.1)
           PY
-          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl
+          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl,ai_embed_ordering
+          python3 - <<'PY'
+          import json
+          import urllib.request
+
+          with urllib.request.urlopen("http://127.0.0.1:8000/__stats", timeout=5) as response:
+              batches = json.load(response)["batches"]["/compatible-mode/v1/embeddings"]
+          assert batches.count(["first", "third"]) == 1
+          assert batches.count(["first", "second"]) == 1
+          print("Embedding requests are batched without NULL inputs")
+          PY
 
       - name: Capture diagnostic output
         id: diagnostics

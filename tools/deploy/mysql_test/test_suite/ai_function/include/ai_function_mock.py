@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -16,17 +17,29 @@ def embedding_inputs(body):
     return values
 
 
-def vector(dimension):
+def vector(dimension, index=0):
     if type(dimension) is not int or dimension <= 0:
         raise ValueError("dimensions must be a positive integer")
-    return ([0.0, 0.25, 0.5, 0.75] * ((dimension + 3) // 4))[:dimension]
+    return ([float(index + 1), 0.25, 0.5, 0.75] * ((dimension + 3) // 4))[:dimension]
 
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    batches = {}
+    batches_lock = threading.Lock()
 
     def log_message(self, fmt, *args):
         return
+
+    def do_GET(self):
+        if self.path.rstrip("/") == "/__stats":
+            with Handler.batches_lock:
+                batches = {
+                    path: list(values) for path, values in Handler.batches.items()
+                }
+            self.send_json(200, {"batches": batches})
+        else:
+            self.send_json(404, {"error": "unknown endpoint"})
 
     def do_POST(self):
         try:
@@ -52,12 +65,18 @@ class Handler(BaseHTTPRequestHandler):
                 }
             elif path.endswith("/compatible-mode/v1/embeddings"):
                 values = embedding_inputs(body)
+                with Handler.batches_lock:
+                    Handler.batches.setdefault(path, []).append(values)
                 dimension = body.get("dimensions", 768)
                 response = {
-                    "data": [
-                        {"index": index, "embedding": vector(dimension)}
-                        for index, _ in enumerate(values)
-                    ]
+                    "data": list(
+                        reversed(
+                            [
+                                {"index": index, "embedding": vector(dimension, index)}
+                                for index, _ in enumerate(values)
+                            ]
+                        )
+                    )
                 }
             elif path.endswith("/v1/rerank"):
                 documents = body.get("documents")
