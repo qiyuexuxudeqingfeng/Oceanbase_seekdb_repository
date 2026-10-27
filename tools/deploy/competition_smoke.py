@@ -28,11 +28,12 @@ def telemetry_state(candidates):
     return None
 
 
-def log_tail(path, lines=80):
+def telemetry_matches(path, limit=80):
     if not path.is_file():
         return None
     text = path.read_text(encoding="utf-8", errors="replace")
-    return text.splitlines()[-lines:]
+    matches = [line for line in text.splitlines() if "telemetry" in line.lower()]
+    return matches[-limit:]
 
 
 def dump_diagnostics(candidates, database_path):
@@ -45,10 +46,10 @@ def dump_diagnostics(candidates, database_path):
         entries = sorted(p.name for p in log_dir.iterdir())[:20] if log_dir.is_dir() else []
         print(f"{log_dir}: exists={log_dir.is_dir()}, entries={entries}", flush=True)
     for path in logs:
-        tail = log_tail(path)
-        if tail is not None:
-            print(f"--- {path} (last {len(tail)} lines) ---", flush=True)
-            for line in tail:
+        matches = telemetry_matches(path)
+        if matches is not None:
+            print(f"--- {path}: {len(matches)} telemetry lines ---", flush=True)
+            for line in matches:
                 print(line, flush=True)
 
 
