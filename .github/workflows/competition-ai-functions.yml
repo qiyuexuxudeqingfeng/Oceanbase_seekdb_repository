@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/competition-ai-functions.yml"
       - "src/sql/engine/expr/ob_expr_ai/**"
+      - "src/share/ai_service/**"
       - "tools/deploy/mysql_test/test_suite/ai_function/**"
       - "unittest/**"
 
@@ -82,10 +83,27 @@ jobs:
           PY
           ./tools/deploy/obd.sh deploy -c "$RUNNER_TEMP/seekdb-single.yaml" -n single
 
-      - name: Run the published AI prompt SQL tests
+      - name: Run the published AI function SQL tests
         run: |
-          exec > >(tee "$RUNNER_TEMP/ai-prompt.log") 2>&1
-          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt
+          exec > >(tee "$RUNNER_TEMP/ai-functions.log") 2>&1
+          python3 tools/deploy/mysql_test/test_suite/ai_function/include/ai_function_mock.py --port 8000 &
+          mock_pid=$!
+          trap 'kill "$mock_pid" 2>/dev/null || true; wait "$mock_pid" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import socket
+          import time
+
+          deadline = time.monotonic() + 15
+          while True:
+              try:
+                  socket.create_connection(("127.0.0.1", 8000), timeout=0.2).close()
+                  break
+              except OSError:
+                  if time.monotonic() >= deadline:
+                      raise
+                  time.sleep(0.1)
+          PY
+          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl
 
       - name: Capture diagnostic output
         id: diagnostics
@@ -98,7 +116,7 @@ jobs:
 
           root = Path(os.environ["RUNNER_TEMP"])
           parts = []
-          for name in ("build", "deploy", "ai-prompt"):
+          for name in ("build", "deploy", "ai-functions"):
               path = root / f"{name}.log"
               if path.is_file():
                   text = path.read_text(encoding="utf-8", errors="replace")
@@ -129,8 +147,8 @@ jobs:
           RESULT: ${{ needs.mysqltest.result }}
           DIAGNOSTICS: ${{ needs.mysqltest.outputs.diagnostics }}
         run: |
-          tag="competition-ai-prompt-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          tag="competition-ai-functions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag --annotate "$tag" --message "AI_PROMPT result: ${RESULT}" --message "${DIAGNOSTICS}"
+          git tag --annotate "$tag" --message "AI functions result: ${RESULT}" --message "${DIAGNOSTICS}"
           git push origin "refs/tags/$tag"
