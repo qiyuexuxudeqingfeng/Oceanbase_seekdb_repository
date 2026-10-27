@@ -51,11 +51,10 @@ async def main():
         deadline = time.monotonic() + 120
         while True:
             state = telemetry_state(candidates)
-            if state is not None and state[1] is not False:
-                identifier, delivered = state
+            if state is not None and state[1] is True:
+                identifier = state[0]
                 print(f"DEPLOYMENT_UUID={identifier}", flush=True)
-                if delivered is True:
-                    print("Telemetry delivery confirmed by the engine.", flush=True)
+                print("Telemetry delivery confirmed by the engine.", flush=True)
                 output_path = os.environ.get("GITHUB_OUTPUT")
                 if output_path:
                     with Path(output_path).open("a", encoding="utf-8") as output:
@@ -63,7 +62,7 @@ async def main():
                 return
             if time.monotonic() >= deadline:
                 raise RuntimeError(
-                    "The engine did not produce a delivered telemetry ID within 120 seconds"
+                    "The engine did not confirm telemetry delivery within 120 seconds"
                 )
             time.sleep(2)
     finally:
