@@ -148,10 +148,11 @@ jobs:
           import urllib.request
 
           with urllib.request.urlopen("http://127.0.0.1:8000/__stats", timeout=5) as response:
-              batches = json.load(response)["batches"]["/compatible-mode/v1/embeddings"]
-          assert batches.count(["first", "third"]) == 1
-          assert batches.count(["first", "second"]) == 1
-          print("Embedding requests are batched without NULL inputs")
+              stats = json.load(response)
+          ordering_batches = stats["model_batches"]["ordering-embedding-v1"]
+          assert ordering_batches.count(["first", "second"]) == 1
+          assert ordering_batches.count(["first", "third"]) == 1
+          print("Ordering embedding requests are batched without NULL inputs")
           PY
 
       - name: Capture diagnostic output

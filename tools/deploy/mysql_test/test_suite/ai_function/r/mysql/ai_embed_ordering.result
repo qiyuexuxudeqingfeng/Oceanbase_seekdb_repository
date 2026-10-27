@@ -1,17 +1,37 @@
 call DBMS_AI_SERVICE.DROP_AI_MODEL('ordering_embed');
 call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('ordering_embed_ep');
 call DBMS_AI_SERVICE.CREATE_AI_MODEL(
-'ordering_embed', '{"type":"dense_embedding","model_name":"text-embedding-v1"}');
+'ordering_embed', '{"type":"dense_embedding","model_name":"ordering-embedding-v1"}');
 call DBMS_AI_SERVICE.CREATE_AI_MODEL_ENDPOINT(
 'ordering_embed_ep', '{"ai_model_name":"ordering_embed","scope":"all","url":"http://0.0.0.0:8000/compatible-mode/v1/embeddings","access_key":"mock-key","provider":"openai"}');
 drop table if exists ai_embed_order;
+drop table if exists ai_embed_order_vectors;
+drop table if exists ai_embed_order_gaps;
+drop table if exists ai_embed_order_gap_vectors;
 create table ai_embed_order(id int primary key, content text);
 insert into ai_embed_order values(1,'first'),(2,'second');
-select id, json_extract(ai_embed('ordering_embed', content), '$[0]') = id as in_original_order
-from ai_embed_order order by id;
+create table ai_embed_order_vectors(id int primary key, embedding json);
+insert into ai_embed_order_vectors
+select id, ai_embed('ordering_embed', content) from ai_embed_order order by id;
+select id, json_extract(embedding, '$[0]') = id as in_original_order
+from ai_embed_order_vectors order by id;
 id	in_original_order
 1	1
 2	1
+drop table ai_embed_order_vectors;
 drop table ai_embed_order;
+create table ai_embed_order_gaps(id int primary key, content text);
+insert into ai_embed_order_gaps values(1,'first'),(2,null),(3,'third');
+create table ai_embed_order_gap_vectors(id int primary key, embedding json);
+insert into ai_embed_order_gap_vectors
+select id, ai_embed('ordering_embed', content) from ai_embed_order_gaps order by id;
+select id, cast(json_unquote(json_extract(embedding, '$[0]')) as signed) as first_element
+from ai_embed_order_gap_vectors order by id;
+id	first_element
+1	1
+2	NULL
+3	2
+drop table ai_embed_order_gap_vectors;
+drop table ai_embed_order_gaps;
 call DBMS_AI_SERVICE.DROP_AI_MODEL('ordering_embed');
 call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('ordering_embed_ep');

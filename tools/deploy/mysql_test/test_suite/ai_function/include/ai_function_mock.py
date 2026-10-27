@@ -44,6 +44,7 @@ def rerank_score(query, document):
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     batches = {}
+    model_batches = {}
     batches_lock = threading.Lock()
 
     def log_message(self, fmt, *args):
@@ -55,7 +56,11 @@ class Handler(BaseHTTPRequestHandler):
                 batches = {
                     path: list(values) for path, values in Handler.batches.items()
                 }
-            self.send_json(200, {"batches": batches})
+                model_batches = {
+                    model: list(values)
+                    for model, values in Handler.model_batches.items()
+                }
+            self.send_json(200, {"batches": batches, "model_batches": model_batches})
         else:
             self.send_json(404, {"error": "unknown endpoint"})
 
@@ -91,8 +96,11 @@ class Handler(BaseHTTPRequestHandler):
                 }
             elif path.endswith("/compatible-mode/v1/embeddings"):
                 values = embedding_inputs(body)
+                model = body.get("model")
                 with Handler.batches_lock:
                     Handler.batches.setdefault(path, []).append(values)
+                    if isinstance(model, str) and model:
+                        Handler.model_batches.setdefault(model, []).append(values)
                 dimension = body.get("dimensions", 768)
                 response = {
                     "data": list(
@@ -127,6 +135,10 @@ class Handler(BaseHTTPRequestHandler):
                 response = {"response": "mock completion"}
             elif path.endswith("/api/embed"):
                 values = embedding_inputs(body)
+                model = body.get("model")
+                with Handler.batches_lock:
+                    if isinstance(model, str) and model:
+                        Handler.model_batches.setdefault(model, []).append(values)
                 response = {"embeddings": [vector(4) for _ in values]}
             else:
                 self.send_json(404, {"error": "unknown endpoint"})
