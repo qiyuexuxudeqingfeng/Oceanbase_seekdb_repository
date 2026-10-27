@@ -58,10 +58,18 @@ class Handler(BaseHTTPRequestHandler):
                     type(body["max_tokens"]) is not int or body["max_tokens"] <= 0
                 ):
                     raise ValueError("max_tokens must be positive")
+                content = next(
+                    (
+                        message.get("content")
+                        for message in reversed(messages)
+                        if message.get("role") == "user"
+                    ),
+                    None,
+                )
+                if not isinstance(content, str) or not content:
+                    raise ValueError("user content must be a nonempty string")
                 response = {
-                    "choices": [
-                        {"message": {"role": "assistant", "content": "mock completion"}}
-                    ]
+                    "choices": [{"message": {"role": "assistant", "content": content}}]
                 }
             elif path.endswith("/compatible-mode/v1/embeddings"):
                 values = embedding_inputs(body)

@@ -1,0 +1,23 @@
+#owner: oceanbase
+#owner group: shenzhen
+
+connection default;
+
+--error 0,11118
+call DBMS_AI_SERVICE.DROP_AI_MODEL('complete_prompt');
+--error 0,11112
+call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('complete_prompt_ep');
+call DBMS_AI_SERVICE.CREATE_AI_MODEL(
+  'complete_prompt', '{"type":"completion","model_name":"qwen3-32b"}');
+call DBMS_AI_SERVICE.CREATE_AI_MODEL_ENDPOINT(
+  'complete_prompt_ep', '{"ai_model_name":"complete_prompt","scope":"all","url":"http://0.0.0.0:8000/compatible-mode/v1/chat/completions","access_key":"mock-key","provider":"openai"}');
+
+select ai_complete('complete_prompt', ai_prompt('value={0}/{0}/{1}',json_object('k',2),json_array(1,true))) as expanded_prompt;
+select ai_complete('complete_prompt', ai_prompt('describe {0}',json_object('text','你好'))) as unicode_prompt;
+select ai_complete('complete_prompt', ai_prompt('x={0}',json_object('k',2)), '{"temperature":0.2,"max_tokens":16}') as config_prompt;
+select ai_complete('complete_prompt', 'hello', null) as null_config;
+--error 1210
+select ai_complete('complete_prompt', ai_prompt('bad={2}', 'x'));
+
+call DBMS_AI_SERVICE.DROP_AI_MODEL('complete_prompt');
+call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('complete_prompt_ep');

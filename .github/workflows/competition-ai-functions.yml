@@ -103,7 +103,7 @@ jobs:
                       raise
                   time.sleep(0.1)
           PY
-          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl,ai_embed_ordering
+          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl,ai_embed_ordering,ai_complete_prompt
           python3 - <<'PY'
           import json
           import urllib.request
