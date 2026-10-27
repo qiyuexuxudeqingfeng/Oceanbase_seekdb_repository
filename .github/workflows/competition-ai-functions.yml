@@ -126,6 +126,10 @@ jobs:
               raise SystemExit("expected exactly one global section")
           resource_lines = "    memory_budget: '1G'\n    datafile_size: '2G'\n    log_disk_size: '2G'"
           text = text.replace(global_marker, f"{global_marker}\n{resource_lines}", 1)
+          text = "".join(
+              line for line in text.splitlines(keepends=True)
+              if not line.lstrip().startswith("__min_full_resource_pool_memory:")
+          )
           destination.write_text(text, encoding="utf-8")
           PY
           ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
