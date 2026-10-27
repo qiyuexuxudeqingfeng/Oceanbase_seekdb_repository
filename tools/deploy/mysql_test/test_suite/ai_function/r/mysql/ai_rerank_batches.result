@@ -1,0 +1,33 @@
+call DBMS_AI_SERVICE.DROP_AI_MODEL('rerank_batches');
+call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('rerank_batches_ep');
+call DBMS_AI_SERVICE.CREATE_AI_MODEL(
+'rerank_batches', '{"type":"rerank","model_name":"BAAI/bge-reranker-v2-m3"}');
+call DBMS_AI_SERVICE.CREATE_AI_MODEL_ENDPOINT(
+'rerank_batches_ep', '{"ai_model_name":"rerank_batches","scope":"all","url":"http://0.0.0.0:8000/v1/rerank","access_key":"mock-key","provider":"siliconflow"}');
+select json_length(ai_rerank('rerank_batches','doc',json_array(
+'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+'doc20','doc21','doc22','doc23','doc24'),null)) as document_count;
+document_count
+25
+select json_extract(ai_rerank('rerank_batches','doc',json_array(
+'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+'doc20','doc21','doc22','doc23','doc24'),null), '$[0].index') as first_index,
+json_extract(ai_rerank('rerank_batches','doc',json_array(
+'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+'doc20','doc21','doc22','doc23','doc24'),null), '$[19].index') as batch_boundary,
+json_extract(ai_rerank('rerank_batches','doc',json_array(
+'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+'doc20','doc21','doc22','doc23','doc24'),null), '$[20].index') as next_batch;
+first_index	batch_boundary	next_batch
+0	19	20
+select json_unquote(json_extract(ai_rerank('rerank_batches','doc',
+json_array(json_object('id','a','text','alpha'),json_object('id','b','text','beta')),
+'text'), '$[0].id')) as first_id;
+first_id
+a
+call DBMS_AI_SERVICE.DROP_AI_MODEL('rerank_batches');
+call DBMS_AI_SERVICE.DROP_AI_MODEL_ENDPOINT('rerank_batches_ep');

@@ -94,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("documents must contain strings")
                 response = {
                     "results": [
-                        {"index": index, "relevance_score": 1.0 / (index + 1)}
+                        {"index": index, "relevance_score": 1.0}
                         for index, _ in enumerate(documents)
                     ]
                 }

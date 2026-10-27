@@ -1556,6 +1556,76 @@ int ObAIFuncModel::call_dense_embedding_vector_v2(ObArray<ObString> &content, Ob
   return ret;
 }
 
+int ObAIFuncModel::validate_rerank_results(ObIAllocator &allocator, ObJsonArray *document_array, ObJsonArray *result_array)
+{
+  INIT_SUCC(ret);
+  if (OB_ISNULL(document_array) || OB_ISNULL(result_array)) {
+    ret = OB_INVALID_ARGUMENT;
+  } else if (document_array->element_count() != result_array->element_count()) {
+    ret = OB_INVALID_DATA;
+  } else {
+    ObString index_key("index");
+    ObString score_key("relevance_score");
+    share::ObJsonReaderHelper reader(allocator);
+    auto get_score = [&](ObJsonObject *object, float &score) -> int {
+      ObJsonNode *score_node = object->get_value(score_key);
+      if (OB_ISNULL(score_node)) {
+        return OB_INVALID_DATA;
+      }
+      int score_ret = reader.get_float_value(score_node, score);
+      if (OB_SUCC(score_ret) && !std::isfinite(score)) {
+        score_ret = OB_INVALID_DATA;
+      }
+      return score_ret;
+    };
+    ObArray<bool> seen;
+    for (int64_t i = 0; OB_SUCC(ret) && i < result_array->element_count(); i++) {
+      if (OB_FAIL(seen.push_back(false))) {
+      }
+    }
+    for (int64_t i = 0; OB_SUCC(ret) && i < result_array->element_count(); i++) {
+      ObJsonNode *node = result_array->get_value(i);
+      if (OB_ISNULL(node) || node->json_type() != ObJsonNodeType::J_OBJECT) {
+        ret = OB_INVALID_DATA;
+      } else {
+        ObJsonObject *object = static_cast<ObJsonObject *>(node);
+        ObJsonNode *index_node = object->get_value(index_key);
+        float score = 0.0;
+        if (OB_ISNULL(index_node) || index_node->json_type() != ObJsonNodeType::J_INT) {
+          ret = OB_INVALID_DATA;
+        } else if (OB_FAIL(get_score(object, score))) {
+        } else {
+          int64_t index = static_cast<ObJsonInt *>(index_node)->value();
+          if (index < 0 || index >= document_array->element_count() || seen[index]) {
+            ret = OB_INVALID_DATA;
+          } else {
+            seen[index] = true;
+          }
+        }
+      }
+    }
+    for (int64_t i = 1; OB_SUCC(ret) && i < result_array->element_count(); i++) {
+      ObJsonNode *current = result_array->get_value(i);
+      float current_score = 0.0;
+      if (OB_FAIL(get_score(static_cast<ObJsonObject *>(current), current_score))) {
+        continue;
+      }
+      int64_t j = i - 1;
+      for (; OB_SUCC(ret) && j >= 0; j--) {
+        float previous_score = 0.0;
+        if (OB_FAIL(get_score(static_cast<ObJsonObject *>(result_array->get_value(j)), previous_score))) {
+        } else if (previous_score >= current_score) {
+          break;
+        } else if (OB_FAIL(result_array->replace(result_array->get_value(j + 1), result_array->get_value(j)))) {
+        }
+      }
+      if (OB_SUCC(ret) && OB_FAIL(result_array->replace(result_array->get_value(j + 1), current))) {
+      }
+    }
+  }
+  return ret;
+}
+
 int ObAIFuncModel::call_rerank(ObString &query, ObJsonArray *contents, ObJsonArray *&results)
 {
   int ret = OB_SUCCESS;
@@ -1576,6 +1646,9 @@ int ObAIFuncModel::call_rerank(ObString &query, ObJsonArray *contents, ObJsonArr
   } else if (OB_FAIL(rerank_provider->get_body(*allocator_, request_model_name, query, contents, nullptr, body))) {
   } else if (OB_FAIL(client.send_post(*allocator_, endpoint_info_.get_url(), headers, body, response))) {
   } else if (OB_FAIL(rerank_provider->parse_output(*allocator_, response, result_base))) {
+  } else if (OB_ISNULL(result_base) || result_base->json_type() != ObJsonNodeType::J_ARRAY) {
+    ret = OB_INVALID_DATA;
+  } else if (OB_FAIL(validate_rerank_results(*allocator_, contents, static_cast<ObJsonArray *>(result_base)))) {
   } else {
     results = static_cast<ObJsonArray *>(result_base);
   }

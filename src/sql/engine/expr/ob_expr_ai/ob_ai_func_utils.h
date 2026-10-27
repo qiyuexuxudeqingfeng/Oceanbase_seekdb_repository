@@ -360,6 +360,7 @@ public:
    int call_dense_embedding_vector_v2(ObArray<ObString> &contents, ObJsonObject *config, ObArray<ObString> &results);
    // rerank
    int call_rerank(ObString &query, ObJsonArray *contents, ObJsonArray *&results);
+   static int validate_rerank_results(ObIAllocator &allocator, ObJsonArray *document_array, ObJsonArray *result_array);
  private:
    bool is_completion_type() {return info_.type_ == share::EndpointType::COMPLETION;}
    bool is_dense_embedding_type() {return info_.type_ == share::EndpointType::DENSE_EMBEDDING;}

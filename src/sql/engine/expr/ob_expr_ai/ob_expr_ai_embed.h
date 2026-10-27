@@ -25,6 +25,11 @@
 
 namespace oceanbase 
 {
+namespace query
+{
+class ObIAiEndpointResolver;
+}
+
 namespace sql 
 {
 class ObExprAIEmbed : public ObFuncExprOperator 
