@@ -75,24 +75,52 @@ jobs:
           cmake --build build_release --target seekdb --parallel 4
           test -x build_release/src/observer/seekdb
 
+      - name: Verify deployment inputs
+        run: |
+          exec > >(tee "$RUNNER_TEMP/preflight.log") 2>&1
+          test -x build_release/src/observer/seekdb
+          test -d build_release/syspack_release
+          test -n "$(ls -A build_release/syspack_release/*.sql 2>/dev/null)"
+          test -s tools/timezone_V1.log
+          test -s tools/default_srs_data_mysql.sql
+          test -x deps/3rd/usr/bin/obd
+          test -x deps/3rd/usr/local/oceanbase/devtools/bin/llvm-symbolizer
+          test -x deps/3rd/u01/obclient/bin/obclient
+          test -x deps/3rd/u01/obclient/bin/mysqltest
+          ls -l build_release/src/observer/seekdb tools/timezone_V1.log tools/default_srs_data_mysql.sql
+          if command -v libtool >/dev/null 2>&1; then
+            echo "libtool: $(command -v libtool)"
+          else
+            echo "libtool: absent, copy.sh will use cp"
+          fi
+
       - name: Deploy the temporary test instance
         run: |
           exec > >(tee "$RUNNER_TEMP/deploy.log") 2>&1
           ./tools/deploy/obd.sh prepare -p "$RUNNER_TEMP/obtest"
+          test -x tools/deploy/bin/seekdb
+          test -s tools/deploy/etc/timezone_V1.log
+          test -s tools/deploy/etc/default_srs_data_mysql.sql
+          test -n "$(ls -A tools/deploy/admin/*.sql 2>/dev/null)"
           python3 - <<'PY'
           import os
+          import re
           from pathlib import Path
 
           source = Path("tools/deploy/single.yaml")
-          destination = Path(os.environ["RUNNER_TEMP"]) / "seekdb-single.yaml"
+          destination = Path("tools/deploy/single-ci.yaml")
           home_path = Path(os.environ["RUNNER_TEMP"]) / "seekdb-home"
-          lines = [
-              f"  home_path: {home_path}\n" if line.lstrip().startswith("home_path:") else line
-              for line in source.read_text(encoding="utf-8").splitlines(keepends=True)
-          ]
-          destination.write_text("".join(lines), encoding="utf-8")
+          text = source.read_text(encoding="utf-8")
+          text, replaced = re.subn(
+              r"(?m)^([ \t]*)home_path:.*$",
+              lambda match: f"{match.group(1)}home_path: {home_path}",
+              text,
+          )
+          if replaced != 1:
+              raise SystemExit(f"expected exactly one home_path entry, found {replaced}")
+          destination.write_text(text, encoding="utf-8")
           PY
-          ./tools/deploy/obd.sh deploy -c "$RUNNER_TEMP/seekdb-single.yaml" -n single
+          ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
 
       - name: Run the published AI function SQL tests
         run: |
@@ -114,7 +142,7 @@ jobs:
                       raise
                   time.sleep(0.1)
           PY
-          ./tools/deploy/obd.sh mysqltest -n single --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl,ai_embed_ordering,ai_complete_prompt,ai_rerank_batches
+          ./tools/deploy/obd.sh mysqltest -n single --disable-reboot --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl,ai_embed_ordering,ai_complete_prompt,ai_rerank_batches
           python3 - <<'PY'
           import json
           import urllib.request
@@ -137,7 +165,7 @@ jobs:
 
           root = Path(os.environ["RUNNER_TEMP"])
           parts = []
-          for name in ("build", "deploy", "ai-functions"):
+          for name in ("build", "preflight", "deploy", "ai-functions"):
               path = root / f"{name}.log"
               if path.is_file():
                   text = path.read_text(encoding="utf-8", errors="replace")

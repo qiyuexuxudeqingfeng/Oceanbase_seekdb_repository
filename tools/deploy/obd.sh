@@ -77,9 +77,10 @@ function variables_prepare {
 function copy_sh {
   if [[ -f copy.sh ]]
   then
-  bash copy.sh $BUILD_PATH
+  bash copy.sh $BUILD_PATH || { echo 'copy.sh failed, stop preparing the deployment' 1>&2; exit 1; }
   else
-  echo 'can not find copy.sh'
+  echo 'can not find copy.sh' 1>&2
+  exit 1
   fi
 }
 
