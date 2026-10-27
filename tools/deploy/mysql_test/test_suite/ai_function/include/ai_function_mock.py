@@ -23,6 +23,24 @@ def vector(dimension, index=0):
     return ([float(index + 1), 0.25, 0.5, 0.75] * ((dimension + 3) // 4))[:dimension]
 
 
+BOUNDARY_QUERY = "merge-boundaries"
+
+
+def rerank_score(query, document):
+    """Return the score the mock reports for one rerank document."""
+    if query != BOUNDARY_QUERY:
+        return 1.0
+    suffix = document[3:]
+    if not document.startswith("doc") or not suffix.isdigit() or len(suffix) != 2:
+        raise ValueError("merge-boundaries expects docNN documents")
+    number = int(suffix)
+    if number < 5:
+        return 100.0 - number
+    if number < 20:
+        return 50.0 - (number - 5)
+    return 95.0 - (number - 20)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     batches = {}
@@ -92,10 +110,14 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("documents must be a nonempty array")
                 if any(not isinstance(document, str) for document in documents):
                     raise ValueError("documents must contain strings")
+                query = body.get("query")
                 response = {
                     "results": [
-                        {"index": index, "relevance_score": 1.0}
-                        for index, _ in enumerate(documents)
+                        {
+                            "index": index,
+                            "relevance_score": rerank_score(query, document),
+                        }
+                        for index, document in enumerate(documents)
                     ]
                 }
             elif path.endswith("/api/generate"):

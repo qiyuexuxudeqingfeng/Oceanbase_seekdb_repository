@@ -28,6 +28,22 @@ select json_extract(ai_rerank('rerank_batches','doc',json_array(
   'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
   'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
   'doc20','doc21','doc22','doc23','doc24'),null), '$[20].index') as next_batch;
+# 第二批（doc20-doc24）分数落在第一批头部与尾部之间：
+# 归并必须跨批保持全局降序，不能把第一批尾部整体排在新批次高分之前
+select json_length(ai_rerank('rerank_batches','merge-boundaries',json_array(
+  'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+  'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+  'doc20','doc21','doc22','doc23','doc24'),null)) as merged_count;
+select json_extract(r, '$[0].index') as first_index,
+  json_extract(r, '$[4].index') as head_last,
+  json_extract(r, '$[5].index') as second_batch_first,
+  json_extract(r, '$[9].index') as second_batch_last,
+  json_extract(r, '$[10].index') as tail_first
+  from (select ai_rerank('rerank_batches','merge-boundaries',json_array(
+  'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+  'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+  'doc20','doc21','doc22','doc23','doc24'),null) as r) x;
+
 select json_unquote(json_extract(ai_rerank('rerank_batches','doc',
   json_array(json_object('id','a','text','alpha'),json_object('id','b','text','beta')),
   'text'), '$[0].id')) as first_id;

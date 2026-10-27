@@ -24,6 +24,23 @@ json_extract(ai_rerank('rerank_batches','doc',json_array(
 'doc20','doc21','doc22','doc23','doc24'),null), '$[20].index') as next_batch;
 first_index	batch_boundary	next_batch
 0	19	20
+select json_length(ai_rerank('rerank_batches','merge-boundaries',json_array(
+'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+'doc20','doc21','doc22','doc23','doc24'),null)) as merged_count;
+merged_count
+25
+select json_extract(r, '$[0].index') as first_index,
+json_extract(r, '$[4].index') as head_last,
+json_extract(r, '$[5].index') as second_batch_first,
+json_extract(r, '$[9].index') as second_batch_last,
+json_extract(r, '$[10].index') as tail_first
+from (select ai_rerank('rerank_batches','merge-boundaries',json_array(
+'doc00','doc01','doc02','doc03','doc04','doc05','doc06','doc07','doc08','doc09',
+'doc10','doc11','doc12','doc13','doc14','doc15','doc16','doc17','doc18','doc19',
+'doc20','doc21','doc22','doc23','doc24'),null) as r) x;
+first_index	head_last	second_batch_first	second_batch_last	tail_first
+0	4	20	24	5
 select json_unquote(json_extract(ai_rerank('rerank_batches','doc',
 json_array(json_object('id','a','text','alpha'),json_object('id','b','text','beta')),
 'text'), '$[0].id')) as first_id;
