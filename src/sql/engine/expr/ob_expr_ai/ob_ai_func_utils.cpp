@@ -1623,6 +1623,12 @@ int ObAIFuncPromptObjectUtils::replace_all_str_args_in_template(ObIAllocator &al
       if (OB_NOT_NULL(arg_node) && arg_node->json_type() == ObJsonNodeType::J_STRING) {
         ObJsonString *arg_str = static_cast<ObJsonString *>(arg_node);
         max_result_len += arg_str->get_str().length();
+      } else if (OB_NOT_NULL(arg_node) && arg_node->json_type() == ObJsonNodeType::J_OBJECT) {
+        ObString arg_text;
+        if (OB_FAIL(ObAIFuncJsonUtils::print_json_to_str(allocator, arg_node, arg_text))) {
+        } else {
+          max_result_len += arg_text.length();
+        }
       } else {
         ret = OB_INVALID_ARGUMENT;
       }
@@ -1669,8 +1675,19 @@ int ObAIFuncPromptObjectUtils::replace_all_str_args_in_template(ObIAllocator &al
               if (OB_NOT_NULL(arg_node) && arg_node->json_type() == ObJsonNodeType::J_STRING) {
                 ObJsonString *arg_str = static_cast<ObJsonString *>(arg_node);
                 ObString arg_value = arg_str->get_str();
-                
+
                 if (result_pos + arg_value.length() <= max_result_len) {
+                  MEMCPY(result_buf + result_pos, arg_value.ptr(), arg_value.length());
+                  result_pos += arg_value.length();
+                } else {
+                  ret = OB_BUF_NOT_ENOUGH;
+                }
+              } else if (OB_NOT_NULL(arg_node) && arg_node->json_type() == ObJsonNodeType::J_OBJECT) {
+                // is_valid_prompt_object accepts object arguments, so the placeholder must
+                // render them as JSON text instead of rejecting the argument here.
+                ObString arg_value;
+                if (OB_FAIL(ObAIFuncJsonUtils::print_json_to_str(allocator, arg_node, arg_value))) {
+                } else if (result_pos + arg_value.length() <= max_result_len) {
                   MEMCPY(result_buf + result_pos, arg_value.ptr(), arg_value.length());
                   result_pos += arg_value.length();
                 } else {
