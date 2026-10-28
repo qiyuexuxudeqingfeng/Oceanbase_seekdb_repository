@@ -95,7 +95,7 @@ jobs:
           fi
 
       - name: Deploy the temporary test instance
-        timeout-minutes: 50
+        timeout-minutes: 90
         run: |
           exec > >(tee "$RUNNER_TEMP/deploy.log") 2>&1
           ./tools/deploy/obd.sh prepare -p "$RUNNER_TEMP/obtest"
@@ -160,7 +160,7 @@ jobs:
           text = text.replace(global_marker, f"{global_marker}\n{resource_lines}", 1)
           destination.write_text(text, encoding="utf-8")
           PY
-          timeout --signal=TERM --kill-after=60 2700 ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
+          timeout --signal=TERM --kill-after=60 4800 ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
 
       - name: Run the published AI function SQL tests
         run: |
@@ -206,17 +206,17 @@ jobs:
 
           root = Path(os.environ["RUNNER_TEMP"])
           parts = []
+          path = root / "seekdb-home" / "log" / "seekdb.log"
+          if path.is_file():
+              text = path.read_text(encoding="utf-8", errors="replace")
+              text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
+              parts.append("--- seekdb-engine ---\n" + "\n".join(text.splitlines()[-30:]))
           for name in ("build", "preflight", "deploy", "ai-functions"):
               path = root / f"{name}.log"
               if path.is_file():
                   text = path.read_text(encoding="utf-8", errors="replace")
                   text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
                   parts.append(f"--- {name} ---\n" + "\n".join(text.splitlines()[-60:]))
-          path = root / "seekdb-home" / "log" / "seekdb.log"
-          if path.is_file():
-              text = path.read_text(encoding="utf-8", errors="replace")
-              text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
-              parts.append("--- seekdb-engine ---\n" + "\n".join(text.splitlines()[-80:]))
           diagnostics = "\n".join(parts)[-16000:] or "No diagnostic log captured."
           delimiter = "__AI_DIAGNOSTICS__"
           while delimiter in diagnostics:
