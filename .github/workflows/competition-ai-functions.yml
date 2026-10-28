@@ -109,10 +109,34 @@ jobs:
 
           plugin = Path("deps/3rd/usr/obd/plugins/seekdb/1.0.0/start_pre.py")
           text = plugin.read_text(encoding="utf-8")
-          old = "'obshell_port', 'zone', 'appname'"
-          new = "'obshell_port', 'zone', 'appname', '__min_full_resource_pool_memory', 'local_ip'"
+
+          # The engine validates every --parameter against its own registry and
+          # stops at the first name it does not declare. OBD materialises its full
+          # default set, so restricting the emitted parameters to the engine
+          # registry keeps this step working as either side changes.
+          registry = Path("rust/config/parameters.yaml").read_text(encoding="utf-8")
+          engine_params = set(
+              re.findall(r"^-\s+name:\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)", registry, re.M)
+          )
+          if len(engine_params) < 200:
+              raise SystemExit(f"unexpected engine parameter registry size: {len(engine_params)}")
+
+          header = "ENGINE_PARAMS = frozenset(%r)\n" % (sorted(engine_params),)
+          marker = "from collections import OrderedDict\n"
+          assert text.count(marker) == 1
+          text = text.replace(marker, marker + "\n" + header, 1)
+
+          old = (
+              "        if key not in not_cmd_opt and key not in not_opt_lite_str"
+              " and not key.startswith('ocp_meta_tenant_'):"
+          )
+          new = (
+              "        if key not in not_cmd_opt and key not in not_opt_lite_str"
+              " and not key.startswith('ocp_meta_tenant_') and key in ENGINE_PARAMS:"
+          )
           assert text.count(old) == 1
           plugin.write_text(text.replace(old, new, 1), encoding="utf-8")
+          print(f"restricted OBD parameters to {len(engine_params)} engine parameters")
 
           source = Path("tools/deploy/single.yaml")
           destination = Path("tools/deploy/single-ci.yaml")
