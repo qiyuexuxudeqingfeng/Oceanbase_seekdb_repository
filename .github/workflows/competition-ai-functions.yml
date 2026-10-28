@@ -110,7 +110,7 @@ jobs:
           plugin = Path("deps/3rd/usr/obd/plugins/seekdb/1.0.0/start_pre.py")
           text = plugin.read_text(encoding="utf-8")
           old = "'obshell_port', 'zone', 'appname'"
-          new = "'obshell_port', 'zone', 'appname', '__min_full_resource_pool_memory'"
+          new = "'obshell_port', 'zone', 'appname', '__min_full_resource_pool_memory', 'local_ip'"
           assert text.count(old) == 1
           plugin.write_text(text.replace(old, new, 1), encoding="utf-8")
 
