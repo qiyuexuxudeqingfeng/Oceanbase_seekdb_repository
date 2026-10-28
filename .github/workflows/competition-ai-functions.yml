@@ -107,6 +107,13 @@ jobs:
           import re
           from pathlib import Path
 
+          plugin = Path("deps/3rd/usr/obd/plugins/seekdb/1.0.0/start_pre.py")
+          text = plugin.read_text(encoding="utf-8")
+          old = "'obshell_port', 'zone', 'appname'"
+          new = "'obshell_port', 'zone', 'appname', '__min_full_resource_pool_memory'"
+          assert text.count(old) == 1
+          plugin.write_text(text.replace(old, new, 1), encoding="utf-8")
+
           source = Path("tools/deploy/single.yaml")
           destination = Path("tools/deploy/single-ci.yaml")
           home_path = Path(os.environ["RUNNER_TEMP"]) / "seekdb-home"
@@ -126,10 +133,6 @@ jobs:
               raise SystemExit("expected exactly one global section")
           resource_lines = "    memory_budget: '1G'\n    datafile_size: '2G'\n    log_disk_size: '2G'"
           text = text.replace(global_marker, f"{global_marker}\n{resource_lines}", 1)
-          text = "".join(
-              line for line in text.splitlines(keepends=True)
-              if not line.lstrip().startswith("__min_full_resource_pool_memory:")
-          )
           destination.write_text(text, encoding="utf-8")
           PY
           ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
