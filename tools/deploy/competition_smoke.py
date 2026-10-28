@@ -321,7 +321,6 @@ async def main():
             database_path.parent / "run" / "telemetry.json",
             Path.cwd() / "run" / "telemetry.json",
         }
-<<<<<<< Updated upstream
         deadline = time.monotonic() + 120
         last_state = None
         while True:
@@ -332,13 +331,6 @@ async def main():
                 last_state = state
             if state is not None and state[2] is True:
                 identifier = state[1]
-=======
-        deadline = time.monotonic() + 300
-        while True:
-            state = telemetry_state(candidates)
-            if state is not None and state[1] is True:
-                identifier, delivered = state
->>>>>>> Stashed changes
                 print(f"DEPLOYMENT_UUID={identifier}", flush=True)
                 print("Telemetry delivery confirmed by the engine.", flush=True)
                 output_path = os.environ.get("GITHUB_OUTPUT")
@@ -349,11 +341,7 @@ async def main():
             if time.monotonic() >= deadline:
                 dump_diagnostics(candidates, database_path, connection=options)
                 raise RuntimeError(
-<<<<<<< Updated upstream
                     "The engine did not confirm telemetry delivery within 120 seconds"
-=======
-                    "The engine did not confirm telemetry delivery within 300 seconds"
->>>>>>> Stashed changes
                 )
             time.sleep(2)
     finally:
