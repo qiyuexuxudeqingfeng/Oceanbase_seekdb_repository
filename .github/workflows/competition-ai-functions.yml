@@ -95,6 +95,7 @@ jobs:
           fi
 
       - name: Deploy the temporary test instance
+        timeout-minutes: 30
         run: |
           exec > >(tee "$RUNNER_TEMP/deploy.log") 2>&1
           ./tools/deploy/obd.sh prepare -p "$RUNNER_TEMP/obtest"
@@ -159,7 +160,7 @@ jobs:
           text = text.replace(global_marker, f"{global_marker}\n{resource_lines}", 1)
           destination.write_text(text, encoding="utf-8")
           PY
-          ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
+          timeout --signal=TERM --kill-after=60 1200 ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
 
       - name: Run the published AI function SQL tests
         run: |
