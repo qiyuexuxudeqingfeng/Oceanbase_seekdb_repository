@@ -160,7 +160,27 @@ jobs:
           text = text.replace(global_marker, f"{global_marker}\n{resource_lines}", 1)
           destination.write_text(text, encoding="utf-8")
           PY
+          (
+            for minute in $(seq 1 85); do
+              sleep 60
+              printf '+%sm free_mb=%s observer=%s listen=%s\n' "$minute" \
+                "$(free -m | awk '/Mem:/{print $4}')" \
+                "$(pgrep -c -f 'seekdb|observer' 2>/dev/null || echo 0)" \
+                "$(ss -lnt 2>/dev/null | awk 'NR>1{print $4}' | tr '\n' ',' | cut -c1-120)"
+              find "$RUNNER_TEMP" -maxdepth 4 -name '*.log' -newermt '-2 minutes' 2>/dev/null | head -3 | while read -r line; do
+                printf '  log %s :: %s\n' "$line" "$(tail -n 1 "$line" | cut -c1-160)"
+              done
+            done
+          ) > "$RUNNER_TEMP/monitor.log" 2>&1 &
+          monitor=$!
+          set +e
           timeout --signal=TERM --kill-after=60 4800 ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
+          deploy_status=$?
+          set -e
+          kill "$monitor" 2>/dev/null || true
+          echo "deploy exit status: $deploy_status"
+          tail -n 40 "$RUNNER_TEMP/monitor.log"
+          exit "$deploy_status"
 
       - name: Run the published AI function SQL tests
         run: |
