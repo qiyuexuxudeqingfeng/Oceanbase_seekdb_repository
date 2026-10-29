@@ -8,7 +8,7 @@ on:
       - ".github/workflows/competition-ai-functions.yml"
       - "src/sql/engine/expr/ob_expr_ai/**"
       - "src/share/ai_service/**"
-      - "tools/deploy/mysql_test/test_suite/ai_function/**"
+      - "tools/deploy/**"
       - "unittest/**"
 
 permissions:
@@ -48,14 +48,6 @@ jobs:
           path: deps/3rd
           key: seekdb-deps-${{ runner.os }}-${{ hashFiles('deps/init/**') }}
           restore-keys: seekdb-deps-${{ runner.os }}-
-
-      - name: Install ccache for repeat builds
-        run: |
-          if ! command -v ccache >/dev/null 2>&1; then
-            sudo apt-get update -qq || true
-            sudo apt-get install -y -qq ccache || echo "ccache install failed; building without it"
-          fi
-          command -v ccache || true
 
       - name: Configure compiler cache when available
         run: |
@@ -453,9 +445,31 @@ jobs:
           RESULT: ${{ needs.mysqltest.result }}
           DIAGNOSTICS: ${{ needs.mysqltest.outputs.diagnostics }}
         run: |
+          set -u
           tag="competition-ai-functions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # The tag message is the only channel out of this workflow, so keep it
+          # to plain text: a single control byte from a captured log made the
+          # previous attempt fail before the push happened.
+          python3 - <<'PY'
+          import os
+          import re
+
+          text = os.environ.get("DIAGNOSTICS", "")[-14000:]
+          text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", ".", text)
+          with open("diagnostics.txt", "w", encoding="utf-8", errors="replace") as handle:
+              handle.write(text)
+          print("diagnostics bytes:", len(text.encode("utf-8")))
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit --allow-empty -m "AI functions result: ${RESULT}" -m "Tested commit: ${GITHUB_SHA}"
-          git tag --annotate "$tag" --message "AI functions result: ${RESULT}" --message "${DIAGNOSTICS}"
-          git push origin "refs/tags/$tag"
+          {
+            printf 'AI functions result: %s\nTested commit: %s\n\n' "$RESULT" "$GITHUB_SHA"
+            cat diagnostics.txt
+          } > tag-message.txt
+          git tag --annotate "$tag" -F tag-message.txt
+          if ! git push origin "refs/tags/$tag"; then
+            git tag -d "$tag"
+            git tag --annotate "$tag" -m "AI functions result: ${RESULT}" -m "Tested commit: ${GITHUB_SHA}" -m "diagnostics omitted: the captured text could not be stored in a tag"
+            git push origin "refs/tags/$tag"
+          fi
