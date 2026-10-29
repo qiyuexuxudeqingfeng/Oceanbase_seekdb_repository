@@ -74,6 +74,21 @@ function variables_prepare {
   DEFAULT_DEPLOY_NAME_FILE=$OBD_HOME/.obd/.default_deploy
 }
 
+## Align the bundled OBD plugins with this engine revision.
+## OBD ships pre-built inside deps/3rd and expects a newer engine: it renders
+## parameters this revision does not declare and polls the bootstrap state
+## forever, so a plain `obd cluster start` never returns.  The adaptation is
+## idempotent and lives in the repository so that any runner - including the
+## official judge - deploys a usable instance from `tools/deploy/obd.sh`.
+function patch_obd_plugin {
+  if ! command -v python3 >/dev/null 2>&1
+  then
+    echo 'python3 is required to adapt the bundled OBD plugins' 1>&2
+    return 1
+  fi
+  python3 "$DEPLOY_PATH/patch_obd_plugin.py" "$BASE_DIR"
+}
+
 function copy_sh {
   if [[ -f copy.sh ]]
   then
@@ -487,6 +502,7 @@ function deploy {
   get_deploy_name
   HIDE_DESTROY=1
   [[ "$EXEC_CP" == "1" ]] && copy_sh
+  patch_obd_plugin || exit 1
   mirror_create || exit 1
   deploy_cluster
 }
@@ -655,6 +671,7 @@ function main() {
     ;;
     prepare)
     [[ "$SKIP_COPY" == "" ]] && copy_sh
+    patch_obd_plugin || exit 1
     generate_config
     ;;
     deploy)
