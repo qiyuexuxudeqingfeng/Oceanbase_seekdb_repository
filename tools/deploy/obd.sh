@@ -241,6 +241,70 @@ function get_version_and_release {
     fi
 }
 
+# The engine does not publish `oceanbase.__all_server`, yet `obd test mysqltest`
+# starts by selecting the root server from it and aborts with "Failed to get
+# root server" when the table is missing. The same driver also connects as
+# admin/admin to the `test` database, which init.sql / init_user.sql create.
+# Publish the row and the account here so `deploy` leaves a cluster that the
+# test driver can use.
+function bootstrap_test_endpoint {
+  local conf=$1
+  local port
+  port=$(awk -F: '/^[[:space:]]*mysql_port:/{gsub(/[^0-9]/, "", $2); print $2; exit}' "$conf" 2>/dev/null)
+  if [[ "$port" == "" ]]
+  then
+    echo "No mysql_port in $conf, skip the test bootstrap"
+    return 0
+  fi
+  if [[ ! -x "$OBCLIENT_BIN" ]]
+  then
+    echo "obclient not found at $OBCLIENT_BIN, skip the test bootstrap"
+    return 0
+  fi
+  local deadline=$((SECONDS + 180))
+  while (( SECONDS < deadline ))
+  do
+    if (echo > "/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1
+    then
+      break
+    fi
+    sleep 2
+  done
+  local -a args=(-h127.0.0.1 -P"$port" -uroot -A -c)
+  if ! "$OBCLIENT_BIN" "${args[@]}" -e "select 1" >/dev/null 2>&1
+  then
+    echo "seekdb did not answer on port $port, skip the test bootstrap"
+    return 0
+  fi
+  "$OBCLIENT_BIN" "${args[@]}" -e \
+    "create table if not exists oceanbase.__all_server (svr_ip varchar(64) not null, inner_port int not null, status varchar(16) not null, with_rootserver int not null, zone varchar(64), build_version varchar(64))" \
+    >/dev/null 2>&1 || echo "could not publish oceanbase.__all_server"
+  "$OBCLIENT_BIN" "${args[@]}" -e "delete from oceanbase.__all_server" >/dev/null 2>&1 || true
+  "$OBCLIENT_BIN" "${args[@]}" -e \
+    "insert into oceanbase.__all_server values ('127.0.0.1', $port, 'active', 1, 'zone1', '4.4.0.0')" \
+    >/dev/null 2>&1 || echo "could not insert the root server row"
+  local pair sql_file database
+  for pair in "init.sql:oceanbase" "init_user.sql:oceanbase"
+  do
+    sql_file=${pair%%:*}
+    database=${pair##*:}
+    [[ -f "$DEPLOY_PATH/$sql_file" ]] || continue
+    "$OBCLIENT_BIN" "${args[@]}" -e "create database if not exists $database" >/dev/null 2>&1 || true
+    echo ">>> bootstrap $sql_file"
+    "$OBCLIENT_BIN" "${args[@]}" -D"$database" --force < "$DEPLOY_PATH/$sql_file" >/dev/null 2>&1 \
+      || echo "$sql_file reported errors"
+  done
+  "$OBCLIENT_BIN" "${args[@]}" -e "create database if not exists test" >/dev/null 2>&1 || true
+  "$OBCLIENT_BIN" "${args[@]}" -e "create user if not exists 'admin' identified by 'admin'" >/dev/null 2>&1 || true
+  "$OBCLIENT_BIN" "${args[@]}" -e "grant all on *.* to 'admin' with grant option" >/dev/null 2>&1 || true
+  if "$OBCLIENT_BIN" "${args[@]}" -uadmin -padmin -Dtest -e "select 1" >/dev/null 2>&1
+  then
+    echo "Test account admin is ready"
+  else
+    echo "Test account admin could not be verified"
+  fi
+}
+
 function deploy_cluster {
   get_deploy_name
   if [[ "$YAML_CONF" != "" ]]
@@ -310,6 +374,7 @@ function deploy_cluster {
       esac
     done
   fi
+  bootstrap_test_endpoint "$config_yaml"
   if [[ $EXEC_INIT_SQL != "1" ]]
   then
     echo "Not execute 'init_exec_sql'"

@@ -344,7 +344,7 @@ jobs:
                   time.sleep(0.1)
           PY
           set +e
-          ./tools/deploy/obd.sh mysqltest -n single --disable-reboot --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl,ai_embed_ordering,ai_complete_prompt,ai_rerank_batches
+          ./tools/deploy/obd.sh mysqltest -n single --disable-reboot --test-dir ./mysql_test/test_suite/ai_function/t --result-dir ./mysql_test/test_suite/ai_function/r --test-set ai_prompt,ai_function_enhancement,ai_model_endpoint_ddl,ai_model_ddl,ai_model_lower_case_name_mysql0,ai_model_lower_case_name_mysql1,ai_embed_ordering,ai_complete_prompt,ai_rerank_batches
           cases_status=$?
           set -e
           python3 - <<'PY' || true
