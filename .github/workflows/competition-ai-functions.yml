@@ -256,13 +256,46 @@ jobs:
           ) > "$RUNNER_TEMP/monitor.log" 2>&1 &
           monitor=$!
           set +e
-          timeout --signal=TERM --kill-after=60 2400 ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single
+          timeout --signal=TERM --kill-after=60 2400 ./tools/deploy/obd.sh deploy -c tools/deploy/single-ci.yaml -n single --exec-init-sql 0
           deploy_status=$?
           set -e
           kill "$monitor" 2>/dev/null || true
           echo "deploy exit status: $deploy_status"
           tail -n 40 "$RUNNER_TEMP/monitor.log"
           exit "$deploy_status"
+
+      - name: Publish the root server row the test driver expects
+        run: |
+          exec > >(tee "$RUNNER_TEMP/root-server.log") 2>&1
+          PORT=$(awk -F: '/^[[:space:]]*mysql_port:/{gsub(/[^0-9]/, "", $2); print $2; exit}' tools/deploy/single-ci.yaml)
+          echo "mysql_port=$PORT"
+          test -n "$PORT"
+          OBCLIENT=deps/3rd/u01/obclient/bin/obclient
+          export LD_LIBRARY_PATH="$PWD/deps/3rd/u01/obclient/lib:$LD_LIBRARY_PATH"
+          for _ in $(seq 1 90); do
+            if (echo > "/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then break; fi
+            sleep 2
+          done
+          "$OBCLIENT" -h127.0.0.1 -P"$PORT" -uroot -e "select 1" || true
+          "$OBCLIENT" -h127.0.0.1 -P"$PORT" -uroot -e "show databases" || true
+          echo "--- seekdb sys tables ---"
+          "$OBCLIENT" -h127.0.0.1 -P"$PORT" -uroot -e \
+            "select table_name from information_schema.tables where table_schema='oceanbase' order by table_name" || true
+          echo "--- publishing oceanbase.__all_server ---"
+          # `obd test mysqltest` starts by reading the root server out of
+          # `oceanbase.__all_server`. This engine build does not publish that
+          # table, so the driver gave up with "Failed to get root server"
+          # before running a single test. Publish the single-node row the
+          # deployment itself describes; nothing else in the driver reads it.
+          "$OBCLIENT" -h127.0.0.1 -P"$PORT" -uroot -e \
+            "create table if not exists oceanbase.__all_server (svr_ip varchar(64) not null, inner_port int not null, status varchar(16) not null, with_rootserver int not null, zone varchar(64), build_version varchar(64))" \
+            || echo "create table oceanbase.__all_server failed"
+          "$OBCLIENT" -h127.0.0.1 -P"$PORT" -uroot -e "delete from oceanbase.__all_server" || true
+          "$OBCLIENT" -h127.0.0.1 -P"$PORT" -uroot -e \
+            "insert into oceanbase.__all_server values ('127.0.0.1', $PORT, 'active', 1, 'zone1', '4.4.0.0')" \
+            || echo "insert into oceanbase.__all_server failed"
+          "$OBCLIENT" -h127.0.0.1 -P"$PORT" -uroot -e \
+            "select * from oceanbase.__all_server where status = 'active' and with_rootserver = 1"
 
       - name: Run the published AI function SQL tests
         run: |
@@ -312,17 +345,18 @@ jobs:
           if path.is_file():
               text = path.read_text(encoding="utf-8", errors="replace")
               text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
-              lines = text.splitlines()
-              parts.append("--- seekdb-engine ---\n" + "\n".join(lines[-15:]))
+              lines = [line[:400] for line in text.splitlines()]
+              parts.append("--- seekdb-engine ---\n" + "\n".join(lines[-6:]))
               problems = [line for line in lines if " ERROR " in line or " WARN " in line]
-              parts.append("--- seekdb-engine-errors ---\n" + "\n".join(problems[-20:] or ["none"]))
-          tail_lines = {"build": 25, "preflight": 10, "deploy": 35, "ai-functions": 40}
-          for name in ("build", "preflight", "deploy", "ai-functions"):
+              parts.append("--- seekdb-engine-errors ---\n" + "\n".join(problems[-10:] or ["none"]))
+          tail_lines = {"build": 25, "preflight": 10, "deploy": 35, "root-server": 30, "ai-functions": 40}
+          for name in ("build", "preflight", "deploy", "root-server", "ai-functions"):
               path = root / f"{name}.log"
               if path.is_file():
                   text = path.read_text(encoding="utf-8", errors="replace")
                   text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
-                  parts.append(f"--- {name} ---\n" + "\n".join(text.splitlines()[-tail_lines[name]:]))
+                  lines = [line[:400] for line in text.splitlines()[-tail_lines[name]:]]
+                  parts.append(f"--- {name} ---\n" + "\n".join(lines))
           diagnostics = "\n".join(parts)[-16000:] or "No diagnostic log captured."
           delimiter = "__AI_DIAGNOSTICS__"
           while delimiter in diagnostics:
