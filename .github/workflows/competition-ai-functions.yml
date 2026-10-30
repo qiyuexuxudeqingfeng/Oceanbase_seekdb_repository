@@ -298,14 +298,24 @@ jobs:
               parts.append("--- seekdb-engine ---\n" + "\n".join(lines[-6:]))
               problems = [line for line in lines if " ERROR " in line or " WARN " in line]
               parts.append("--- seekdb-engine-errors ---\n" + "\n".join(problems[-10:] or ["none"]))
-          tail_lines = {"build": 6, "preflight": 6, "deploy": 20, "root-server": 12, "ai-functions": 40, "extra-cases": 45, "ssh-localhost": 4}
+          tail_lines = {"build": 12, "preflight": 6, "deploy": 20, "root-server": 12, "ai-functions": 40, "extra-cases": 30, "ssh-localhost": 4}
           for name in ("build", "preflight", "deploy", "root-server", "ai-functions", "extra-cases", "ssh-localhost"):
               path = root / f"{name}.log"
               if path.is_file():
                   text = path.read_text(encoding="utf-8", errors="replace")
                   text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text).replace("\x00", "\\0")
-                  lines = [line[:400] for line in text.splitlines()[-tail_lines[name]:]]
-                  parts.append(f"--- {name} ---\n" + "\n".join(lines))
+                  lines = [line[:400] for line in text.splitlines()]
+                  if name == "build":
+                      # A failing compile hides its diagnostic far above the
+                      # tail, so surface the errors with a little context.
+                      picked = []
+                      for index, line in enumerate(lines):
+                          if "error:" in line or "undefined reference" in line or "Error " in line:
+                              picked.extend(lines[index:index + 3])
+                              if len(picked) > 30:
+                                  break
+                      parts.append("--- build-errors ---\n" + "\n".join(picked or ["none"]))
+                  parts.append(f"--- {name} ---\n" + "\n".join(lines[-tail_lines[name]:]))
           # Result mismatches: mysqltest leaves a .reject file when the output
           # differs from the expected .result, wherever the runner keeps its
           # log directory. Emit a unified diff: that is the only actionable
