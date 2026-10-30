@@ -8,6 +8,8 @@ on:
       - ".github/workflows/competition-ai-functions.yml"
       - "src/sql/engine/expr/ob_expr_ai/**"
       - "src/share/ai_service/**"
+      - "src/share/inner_table/**"
+      - "src/observer/ai_service/**"
       - "tools/deploy/**"
       - "unittest/**"
 
