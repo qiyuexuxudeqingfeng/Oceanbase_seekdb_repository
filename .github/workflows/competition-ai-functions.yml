@@ -164,6 +164,21 @@ jobs:
           tail -n 40 "$RUNNER_TEMP/monitor.log"
           exit "$deploy_status"
 
+      - name: Report the deployment identity
+        if: always()
+        continue-on-error: true
+        run: |
+          exec > >(tee "$RUNNER_TEMP/deploy-identity.log") 2>&1
+          # The deployment uuid is the identity the competition platform looks
+          # up in its telemetry store, so print every candidate we can find in
+          # the instance directory together with the files they came from.
+          find "$RUNNER_TEMP/seekdb-home" -maxdepth 2 -type f 2>/dev/null | head -40
+          echo "--- uuid candidates ---"
+          grep -rEo '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+            "$RUNNER_TEMP/seekdb-home" 2>/dev/null | sort | uniq -c | sort -rn | head -10 || true
+          echo "--- telemetry hints ---"
+          grep -rEil 'telemetry|uuid' "$RUNNER_TEMP/seekdb-home" 2>/dev/null | head -10 || true
+
       - name: Publish the root server row the test driver expects
         run: |
           exec > >(tee "$RUNNER_TEMP/root-server.log") 2>&1
@@ -300,8 +315,8 @@ jobs:
               parts.append("--- seekdb-engine ---\n" + "\n".join(lines[-6:]))
               problems = [line for line in lines if " ERROR " in line or " WARN " in line]
               parts.append("--- seekdb-engine-errors ---\n" + "\n".join(problems[-10:] or ["none"]))
-          tail_lines = {"build": 12, "preflight": 6, "deploy": 20, "root-server": 12, "ai-functions": 90, "extra-cases": 30, "ssh-localhost": 4}
-          for name in ("build", "preflight", "deploy", "root-server", "ai-functions", "extra-cases", "ssh-localhost"):
+          tail_lines = {"build": 12, "preflight": 6, "deploy": 20, "deploy-identity": 30, "root-server": 12, "ai-functions": 90, "extra-cases": 30, "ssh-localhost": 4}
+          for name in ("build", "preflight", "deploy", "deploy-identity", "root-server", "ai-functions", "extra-cases", "ssh-localhost"):
               path = root / f"{name}.log"
               if path.is_file():
                   text = path.read_text(encoding="utf-8", errors="replace")
