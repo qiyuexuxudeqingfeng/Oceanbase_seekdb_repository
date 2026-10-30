@@ -178,7 +178,7 @@ int ObAiModelEndpointInfo::merge_delta_endpoint(common::ObArenaAllocator &alloca
           ret = OB_AI_FUNC_PARAM_VALUE_INVALID;
           LOG_USER_ERROR(OB_AI_FUNC_PARAM_VALUE_INVALID, strlen("max_concurrency"), "max_concurrency");
         } else {
-          max_concurrency_ = static_cast<ObJsonInt *>(elem.second)->value();
+          max_concurrency_ = elem.second->get_int();
           if (max_concurrency_ < MIN_MAX_CONCURRENCY || max_concurrency_ > MAX_MAX_CONCURRENCY) {
             ret = OB_AI_FUNC_PARAM_VALUE_INVALID;
             LOG_USER_ERROR(OB_AI_FUNC_PARAM_VALUE_INVALID, strlen("max_concurrency"), "max_concurrency");
