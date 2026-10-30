@@ -107,7 +107,8 @@ int ObExprAIEmbed::eval_embed_group(const ObExpr &expr, ObEvalCtx &ctx,
       } else {
         for (int64_t i = 0; OB_SUCC(ret) && i < row_indexes.count(); i++) {
           ObString result = result_strings[i];
-          if (OB_FAIL(ObAIFuncUtils::set_string_result(expr, ctx, results[row_indexes[i]], result))) {
+          if (OB_FAIL(ObAIFuncUtils::set_batch_string_result(
+                  expr, ctx, results[row_indexes[i]], result, row_indexes[i]))) {
           }
         }
       }

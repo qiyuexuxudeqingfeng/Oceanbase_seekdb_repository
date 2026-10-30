@@ -51,13 +51,21 @@ jobs:
 
       - name: Configure compiler cache when available
         run: |
+          if ! command -v ccache >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y --no-install-recommends ccache >/dev/null 2>&1 || true
+          fi
           if command -v ccache >/dev/null 2>&1; then
             {
               echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
-              echo "CCACHE_MAXSIZE=4G"
+              echo "CCACHE_MAXSIZE=3G"
+              echo "CCACHE_COMPILERCHECK=content"
               echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
               echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
             } >> "$GITHUB_ENV"
+            echo "ccache enabled at $(command -v ccache)"
+          else
+            echo "ccache is unavailable; every revision is a full rebuild"
           fi
 
       - name: Cache compiler results
@@ -290,7 +298,7 @@ jobs:
               parts.append("--- seekdb-engine ---\n" + "\n".join(lines[-6:]))
               problems = [line for line in lines if " ERROR " in line or " WARN " in line]
               parts.append("--- seekdb-engine-errors ---\n" + "\n".join(problems[-10:] or ["none"]))
-          tail_lines = {"build": 25, "preflight": 10, "deploy": 35, "root-server": 30, "ai-functions": 40, "extra-cases": 60, "ssh-localhost": 8}
+          tail_lines = {"build": 6, "preflight": 6, "deploy": 20, "root-server": 12, "ai-functions": 40, "extra-cases": 45, "ssh-localhost": 4}
           for name in ("build", "preflight", "deploy", "root-server", "ai-functions", "extra-cases", "ssh-localhost"):
               path = root / f"{name}.log"
               if path.is_file():
@@ -360,7 +368,9 @@ jobs:
           import os
           import re
 
-          text = os.environ.get("DIAGNOSTICS", "")[-14000:]
+          # Keep the whole diff set: the tag message is the only channel that
+          # leaves this workflow, and a truncated tail hides the first cases.
+          text = os.environ.get("DIAGNOSTICS", "")[-60000:]
           text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", ".", text)
           with open("diagnostics.txt", "w", encoding="utf-8", errors="replace") as handle:
               handle.write(text)

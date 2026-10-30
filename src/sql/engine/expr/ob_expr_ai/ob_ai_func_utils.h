@@ -329,6 +329,12 @@ public:
                                  ObJsonObject *http_response,
                                  ObIJsonBase *&result);
   static int set_string_result(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &res, ObString &res_str);
+  // Batch evaluation writes one datum per row of the same batch, so every row
+  // needs its own slice of the expression result buffer. Without the row index
+  // all rows share the buffer of the current batch index and the last written
+  // value wins.
+  static int set_batch_string_result(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &res,
+                                     ObString &res_str, const int64_t batch_idx);
   static bool is_provider_support_base64(const ObString &provider);
   static int decode_base64_embedding_array(const ObIJsonBase &embedding_jbase, ObIAllocator &allocator,
                                            const int64_t dimension, float *&vector);

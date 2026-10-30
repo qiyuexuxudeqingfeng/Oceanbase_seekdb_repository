@@ -1199,6 +1199,20 @@ int ObAIFuncUtils::set_string_result(const ObExpr &expr, ObEvalCtx &ctx, ObDatum
   return ret;
 }
 
+int ObAIFuncUtils::set_batch_string_result(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &res,
+                                           ObString &res_str, const int64_t batch_idx)
+{
+  int ret = OB_SUCCESS;
+  ObTextStringDatumResult text_result(expr.datum_meta_.type_, &expr, &ctx, &res);
+  int64_t res_len = res_str.length();
+  if (OB_FAIL(text_result.init_with_batch_idx(res_len, batch_idx))) {
+  } else if (OB_FAIL(text_result.append(res_str))) {
+  } else {
+    text_result.set_result();
+  }
+  return ret;
+}
+
 int ObAIFuncUtils::get_ai_func_info(ObIAllocator &allocator, const ObString &model_id,
                                     share::schema::ObSchemaGetterGuard &guard,
                                     ObAIFuncExprInfo *&info)
@@ -1464,6 +1478,27 @@ int ObAIFuncModel::call_dense_embedding_vector(ObArray<ObString> &contents, ObJs
 }
 
 
+// Render one vector component the way the reference implementation does: a
+// whole number keeps no fractional part, everything else keeps the shortest
+// representation that still round trips a float.
+static int append_vector_number(ObStringBuffer &buffer, const float value, bool &first)
+{
+  int ret = OB_SUCCESS;
+  char text[64] = {0};
+  int64_t text_len = 0;
+  if (value == std::trunc(value) && std::fabs(value) < 1e15) {
+    text_len = snprintf(text, sizeof(text), "%lld", static_cast<long long>(value));
+  } else {
+    text_len = snprintf(text, sizeof(text), "%.9g", static_cast<double>(value));
+  }
+  if (OB_UNLIKELY(text_len <= 0 || text_len >= static_cast<int64_t>(sizeof(text)))) {
+    ret = OB_ERR_UNEXPECTED;
+  } else if (!first && OB_FAIL(buffer.append(",", 1ULL))) {
+  } else if (OB_FAIL(buffer.append(text, static_cast<uint64_t>(text_len)))) {
+  }
+  return ret;
+}
+
 int ObAIFuncModel::call_dense_embedding_vector_v2(ObArray<ObString> &content, ObJsonObject *config, ObArray<ObString> &results)
 {
   int ret = OB_SUCCESS;
@@ -1472,7 +1507,6 @@ int ObAIFuncModel::call_dense_embedding_vector_v2(ObArray<ObString> &content, Ob
   ObJsonObject *response = nullptr;
   ObIJsonBase *result_base = nullptr;
   ObAIFuncIEmbed *embed_provider = nullptr;
-  ObString result_str;
   ObAIFuncClient client;
   int64_t dimension = 0;
   if (OB_NOT_NULL(config)) {
@@ -1524,6 +1558,11 @@ int ObAIFuncModel::call_dense_embedding_vector_v2(ObArray<ObString> &content, Ob
             ret = OB_INVALID_ARGUMENT;
             LOG_USER_ERROR(OB_INVALID_ARGUMENT, "ai_embed, result dimension is not equal to dimension");
           }
+          ObStringBuffer vector_buf(allocator_);
+          if (OB_FAIL(ret)) {
+          } else if (OB_FAIL(vector_buf.append("[", 1ULL))) {
+          }
+          bool first_element = true;
           for (int64_t element_index = 0;
                OB_SUCC(ret) && element_index < embedding_array->element_count();
                element_index++) {
@@ -1532,11 +1571,14 @@ int ObAIFuncModel::call_dense_embedding_vector_v2(ObArray<ObString> &content, Ob
               ret = OB_INVALID_DATA;
             } else if (!std::isfinite(value)) {
               ret = OB_INVALID_DATA;
+            } else if (OB_FAIL(append_vector_number(vector_buf, value, first_element))) {
+            } else {
+              first_element = false;
             }
           }
           if (OB_FAIL(ret)) {
-          } else if (OB_FAIL(ObAIFuncJsonUtils::print_json_to_str(*allocator_, j_base, result_str))) {
-          } else if (OB_FAIL(results.push_back(result_str))) {
+          } else if (OB_FAIL(vector_buf.append("]", 1ULL))) {
+          } else if (OB_FAIL(results.push_back(vector_buf.string()))) {
           }
         }
       }
